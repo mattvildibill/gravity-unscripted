@@ -1,0 +1,1 @@
+import{readdirSync}from'node:fs';import{execFileSync}from'node:child_process';for(const f of readdirSync('dist').filter(x=>x.endsWith('.mjs')))execFileSync(process.execPath,['--check','dist/'+f],{stdio:'inherit'});console.log('Static JavaScript syntax checks passed; dist is the authored application.');

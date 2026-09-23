@@ -1,0 +1,15 @@
+.sites-runtime/
+node_modules/
+
+# Local dependencies, credentials and generated tooling state
+node_modules/
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+.wrangler/
+.sites-runtime/
+*.tsbuildinfo
+*.log
+.DS_Store

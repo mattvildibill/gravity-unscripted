@@ -1,0 +1,12 @@
+{
+  "name": "gravity-unscripted",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "dev": "node scripts/serve.mjs",
+    "build": "node scripts/check.mjs",
+    "test": "node tests/ui-regression.mjs"
+  }
+}
