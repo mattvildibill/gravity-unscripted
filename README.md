@@ -6,16 +6,29 @@ A browser-based N-body laboratory for exploring gravitational motion, numerical 
 
 Figure-eight and regular-polygon orbits; Burrau sensitivity experiment; configurable live systems; error charts; guided tour and hands-free watch mode.
 
+## Explore the lab
+
+- **Watch the lab:** a captioned, roughly three-minute demonstration across all four experiments, including two live calculations.
+- **The choreography:** move through eight real best-so-far search candidates and inspect return error.
+- **The butterfly effect:** compare deterministic nearby starting states without presenting them as probabilities.
+- **Your experiment:** change the initial conditions, calculate locally, and inspect the tighter-rerun disagreement.
+
+Keyboard controls, a click-through tour, time-as-height visualization, and reproducible experiment links are included. The mathematics panel explains assumptions, numerical checks, visual conventions, and limitations.
+
 ## Architecture
 
-Static JavaScript modules, Three.js, Web Workers; bundled numerical trajectory datasets.
+- Authored ES modules and locally bundled Three.js render the interactive scene.
+- A Web Worker runs adaptive Dormand–Prince 5(4) integration, then repeats it at tighter tolerance without blocking UI input.
+- Preset trajectories and search data were calculated independently with SciPy and ship as static JSON.
+- No backend, authentication, telemetry, or external computation service is required.
+
+`npm run build` checks all JavaScript syntax. `npm test` covers UI/state flows, cancellation and startup failures, embedded dismissal, an analytic binary, and agreement with saved independent trajectories. These checks do not replace browser layout, WebGL, or real-device testing.
 
 ## Run locally
 
 Use Node.js 22.13 or later. 
 
 ```sh
-npm install
 npm run build
 npm test
 npm run dev
@@ -25,7 +38,7 @@ Open the local URL printed by the development server (normally http://127.0.0.1:
 
 ## Data and configuration
 
-No API keys. Runtime assets are bundled; optional Google Fonts have system-font fallbacks.
+No dependency installation or API keys are needed. Runtime assets are bundled; optional Google Fonts have system-font fallbacks.
 
 ## Deployment and source workflow
 

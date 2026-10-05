@@ -7,6 +7,6 @@
     "start": "node scripts/serve.mjs",
     "dev": "node scripts/serve.mjs",
     "build": "node scripts/check.mjs",
-    "test": "node tests/ui-regression.mjs"
+    "test": "node tests/ui-regression.mjs && node tests/physics-regression.mjs && node tests/embed-regression.mjs"
   }
 }
