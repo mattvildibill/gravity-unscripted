@@ -71,13 +71,20 @@ console.log('PASS: cancelled-worker isolation, share fallback and display restor
 
 // Without WebGL the source explanation remains accessible and inert controls are honest.
 for(const id of ['method-open','evidence-method','method-close','method-dialog'])els.get(id).events={};
-const startupErrors=[];
-const failedContext=vm.createContext({...context,GravityScene:class{constructor(){throw new Error('WebGL unavailable')}},console:{error:e=>startupErrors.push(e.message)}});
+const startupErrors=[];let failureIconRenders=0;
+const failedContext=vm.createContext({...context,window:{...context.window,lucide:{createIcons(){failureIconRenders++}}},GravityScene:class{constructor(){throw new Error('WebGL unavailable')}},console:{error:e=>startupErrors.push(e.message)}});
 await vm.runInContext('(async()=>{'+src+'})()',failedContext);
-assert.deepEqual(startupErrors,['WebGL unavailable']);assert.equal(els.get('watch').disabled,true);assert.equal(els.get('run').disabled,true);assert.equal(buttons.every(b=>b.disabled),true);
+assert.deepEqual(startupErrors,['WebGL unavailable']);assert.ok(failureIconRenders>0,'Static icons must render when WebGL fails');assert.equal(els.get('watch').disabled,true);assert.equal(els.get('run').disabled,true);assert.equal(buttons.every(b=>b.disabled),true);
 assert.equal(els.get('experiment-workspace').getAttribute('aria-busy'),'false');assert.equal(els.get('evidence-chart').getAttribute('aria-disabled'),'true');
 await els.get('method-open').fire('click');assert.equal(els.get('method-dialog').open,true);
 await els.get('method-close').fire('click');assert.equal(els.get('method-dialog').open,false);
 await els.get('evidence-method').fire('click');assert.equal(els.get('method-dialog').open,true);
 assert.ok(els.get('loading').textContent.includes('read the mathematics'));
-console.log('PASS: WebGL startup failure, disabled unavailable controls, and accessible mathematics fallback.');
+assert.equal(els.get('method-close').disabled,false);
+// A failed data request occurs before scene construction and must still show icons.
+const dataErrors=[];let dataFailureIcons=0;
+const dataFailureContext=vm.createContext({...context,window:{...context.window,lucide:{createIcons(){dataFailureIcons++}}},fetch:async()=>{assert.ok(dataFailureIcons>0,'Static icons must render before data requests');return {ok:false}},console:{error:e=>dataErrors.push(e.message)}});
+await vm.runInContext('(async()=>{'+src+'})()',dataFailureContext);
+assert.deepEqual(dataErrors,['The trajectory data did not load.']);assert.ok(dataFailureIcons>0);
+assert.equal(els.get('watch').disabled,true);assert.equal(els.get('run').disabled,true);assert.equal(buttons.every(b=>b.disabled),true);assert.equal(els.get('method-close').disabled,false);
+console.log('PASS: WebGL/data startup failures render icons, keep unavailable controls disabled, and preserve accessible mathematics.');

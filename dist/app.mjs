@@ -206,7 +206,8 @@ function bind(){
  document.addEventListener('keydown',e=>{if(e.code==='Space'&&e.target===scene.renderer.domElement&&!$('method-dialog').open){e.preventDefault();if(state.p>=1)state.p=0;playState(!state.playing);}});
 }
 function animate(now){const dt=prev?Math.min((now-prev)/1000,.06):0;prev=now;if(watchState.active&&!document.hidden)tickWatch(dt);if(!watchState.active&&state.playing&&current&&!document.hidden){state.p+=dt*state.speed/26;if(state.p>=1){state.p=1;playState(false);}updateProgress();}if(!watchState.active&&state.searchPlaying&&!document.hidden){state.searchClock+=dt;if(state.searchClock>1.3){state.searchClock=0;if(state.search<7)setSearch(state.search+1);else{state.searchPlaying=false;$('search-play').innerHTML='<i data-lucide="play"></i>Watch again';icons();}}}if(!document.hidden)scene?.render(dt);requestAnimationFrame(animate);}
-bindReference();setLabReady(false);
+// Render static controls before either trajectory loading or WebGL can fail.
+bindReference();setLabReady(false);icons();
 try{
  const responses=await Promise.all(['/trajectories.json','/search.json','/ensemble.json'].map(async p=>{const r=await fetch(p,{signal:AbortSignal.timeout(20000)});if(!r.ok)throw new Error('The trajectory data did not load.');return r.json();}));data=Object.fromEntries(responses[0].scenarios.map(s=>[s.id,s]));search=responses[1];ensemble=responses[2];
  scene=new GravityScene($('viewport'),bodyDetails);setLabReady(true);bind();restoreLink();updateSearch();if(!sharedRecipe)playState(!reduced);icons();$('loading')?.remove();$('watch').disabled=false;requestAnimationFrame(animate);
