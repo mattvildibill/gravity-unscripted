@@ -1,32 +1,23 @@
 # Gravity, Unscripted
 
-A browser-based N-body laboratory for exploring gravitational motion, numerical error and sensitive dependence on initial conditions.
+I wanted to understand the n-body problem by changing the starting conditions and seeing what the simulations could show. This browser laboratory lets you explore a repeating orbit, nudge a body, and calculate a different future.
 
-## Features
+[Try a small change](https://gravity.mattvildibill.com/#chaos) · [My portfolio](https://mattvildibill.com)
 
-Figure-eight and regular-polygon orbits; Burrau sensitivity experiment; configurable live systems; error charts; guided tour and hands-free watch mode.
+## Try the lab
 
-## Explore the lab
+- **Figure-eight orbit:** three equal masses follow one repeating path. Scrub through eight actual best-so-far search candidates.
+- **A tiny nudge:** compare two checked, almost identical initial states. Eight additional nearby starts load when needed; they are deterministic examples, not probabilities.
+- **Balanced orbits:** compare the numerical motion of a triangle or octagon with an exact formula, then break its symmetry.
+- **Your experiment:** change mass, speed or physical height. A worker calculates the orbit locally, repeats it more strictly, and reports how much the runs disagree.
 
-- **Watch the lab:** a captioned, roughly three-minute demonstration across all four experiments, including two live calculations.
-- **The choreography:** move through eight real best-so-far search candidates and inspect return error.
-- **The butterfly effect:** compare deterministic nearby starting states without presenting them as probabilities.
-- **Your experiment:** change the initial conditions, calculate locally, and inspect the tighter-rerun disagreement.
+The first action jumps into the checked starting-state comparison. The six-step tour explains each experiment; **Watch the lab** is a captioned, approximately three-minute demonstration with two live calculations. Time sculpture uses height to show elapsed time, which is different from physical vertical motion.
 
-Keyboard controls, a click-through tour, time-as-height visualization, and reproducible experiment links are included. The mathematics panel explains assumptions, numerical checks, visual conventions, and limitations.
-
-## Architecture
-
-- Authored ES modules and locally bundled Three.js render the interactive scene.
-- A Web Worker runs adaptive Dormand–Prince 5(4) integration, then repeats it at tighter tolerance without blocking UI input.
-- Preset trajectories and search data were calculated independently with SciPy and ship as static JSON.
-- No backend, authentication, telemetry, or external computation service is required.
-
-`npm run build` checks all JavaScript syntax. `npm test` covers UI/state flows, cancellation and startup failures, embedded dismissal, an analytic binary, and agreement with saved independent trajectories. These checks do not replace browser layout, WebGL, or real-device testing.
+Keyboard camera controls, reduced-motion support, touch rotation, versioned experiment links and a source-mathematics dialog are included. Sharing captures the current starting conditions, including pending custom-form changes. A recipient explicitly calculates a custom recipe on their own device. If WebGL cannot start, a deliberate orbit diagram and direct mathematics/calculation links remain available.
 
 ## Run locally
 
-Use Node.js 22.13 or later. 
+Use Node.js 24. No dependency installation, backend, account or API keys are required.
 
 ```sh
 npm run build
@@ -34,24 +25,26 @@ npm test
 npm run dev
 ```
 
-Open the local URL printed by the development server (normally http://127.0.0.1:5173). Keep the development server on loopback.
+The local server stays on loopback. Set `PORT` to use a different port. `dist/` contains the authored application and required assets; it is not disposable build output.
 
-## Data and configuration
+## How it works
 
-No dependency installation or API keys are needed. Runtime assets are bundled; optional Google Fonts have system-font fallbacks.
+- `dist/physics.mjs` and `solver-worker.mjs`: adaptive Dormand–Prince 5(4) integration, cancellation and numerical checks.
+- `dist/scene.mjs`: Three.js rendering, keyboard/touch camera controls and a bounded cache of recently viewed scenes.
+- `dist/app.mjs`: experiment state, lazy nearby-future loading, tours, playback and computation lifecycle.
+- `dist/charts.mjs`: logarithmic numerical evidence and magnified return miss.
+- The saved presets were generated independently with SciPy. The downloadable calculation archive includes the original Python workflow and data.
 
-## Deployment and source workflow
+Slider updates are coalesced to the display refresh. Only the small local icon subset is loaded; optional nearby futures do not gate the first orbit or the checked comparison pair. Google Fonts are optional, with system fallbacks.
 
-Serve `dist/` with a static web host. In this recovered project, `dist/` contains authored runtime source and necessary assets, not disposable build output. `npm start` serves it locally.
+## Accuracy and validation
 
-The existing ChatGPT Site remains independently hosted and was not redeployed or relinked. This repository is a version-controlled export, not an automatic two-way sync. Future changes can be reviewed here and deliberately ported to the original Site; never copy deployment identity or private data into a public commit.
+The model uses Newtonian point masses, dimensionless units and no force softening. A known periodic orbit, exact regular-polygon motion and deterministic sensitivity are distinct demonstrations. Rerun agreement and energy conservation are useful checks, not rigorous global error bounds. Close encounters can stop a calculation with an explanation.
 
-## Provenance and validation
+`npm run build` checks JavaScript syntax. `npm test` covers UI/state flows, all tour chapters, worker failure and cancellation, shared recipes, optional-data failure/recovery, an analytic binary and agreement with independent saved trajectories. Browser layout and graphics require separate verification; see [validation notes](VALIDATION.md).
 
-Recovered from the current ChatGPT Sites source checkout at commit `c557b16c038498fe11d7c38f10ed90df48255330`. The migration preserves application code and makes targeted portability/privacy edits. The Sites projects were developed with ChatGPT assistance; this is not represented as unaided work.
+The project was developed with AI-assisted tools. Its numerical assumptions, source references, implementation choices and verification are documented rather than represented as an unaided research result.
 
-See `VALIDATION.md` for checks actually run during migration and their limitations. Historical validation notes, if retained, describe prior work rather than a new test result. No usage, performance or adoption claims are made.
+## Deployment and attribution
 
-## Licensing and attribution
-
-No new blanket open-source license is assigned: the original project did not establish a complete redistribution license for all authored code/data/assets. Third-party notices remain in their original files. Public source visibility is not a license grant. Obtain appropriate rights before redistributing assets.
+Vercel serves `dist/` from the GitHub repository; see [deployment](docs/DEPLOYMENT.md). Keep original mathematical sources and the Three.js and Lucide license notices. Public repository visibility is not a blanket redistribution license for every authored asset; obtain appropriate rights before redistributing.

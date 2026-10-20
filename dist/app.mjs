@@ -3,21 +3,79 @@ import {center} from './physics.mjs';
 import {chart,drawClosure,sci} from './charts.mjs';
 const $=id=>document.getElementById(id),reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const state={case:'figure8',p:0,playing:!reduced,speed:1,search:7,searchPlaying:false,searchClock:0,future:0,polygon:3,tour:-1,custom:null,worker:null};
-let data,search,ensemble,scene,current,plot,toastTimer,workerTimer,prev=0;let sharedRecipe=null;const formIds=['starting-system','mass','duration','velocity','kick','lift'];const formValues=()=>Object.fromEntries(formIds.map(id=>[id,$(id).value]));
+let data,search,ensemble,scene,current,plot,toastTimer,workerTimer,prev=0;
+let ensemblePromise=null,ensembleError=false;
+let sharedRecipe=null;
+const figureCache=new Map(),exactCache=new WeakMap();
+const formIds=['starting-system','mass','duration','velocity','kick','lift'];
+const formValues=()=>Object.fromEntries(formIds.map(id=>[id,$(id).value]));
 const icons=()=>window.lucide?.createIcons();
 const toast=message=>{$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,3800);};
 function playState(value){state.playing=value;$('play').innerHTML=`<i data-lucide="${value?'pause':'play'}"></i>`;$('play').setAttribute('aria-label',value?'Pause':'Play');icons();}
 function fmtBig(v){return v>=1e9?(v/1e9).toFixed(1)+' billion×':v>=1e6?(v/1e6).toFixed(1)+' million×':Math.round(v).toLocaleString()+'×';}
 function currentSearch(){return search.candidates[state.search];}
-function figureData(){const c=currentSearch(),base=data.figure8;if(state.search===search.candidates.length-1)return base;return {...base,t:c.t,positions:c.positions,summary:{...base.summary,period:c.period},initial:{positions:search.initialPositions,velocities:[[c.parameters[0],c.parameters[1]], [c.parameters[0],c.parameters[1]],[-2*c.parameters[0],-2*c.parameters[1]]]}};}
-function exact(s){return s.t.map(t=>s.initial.positions.map(p=>{const a=s.summary.omega*t;return [p[0]*Math.cos(a)-p[1]*Math.sin(a),p[0]*Math.sin(a)+p[1]*Math.cos(a)];}));}
+function figureData(){const c=currentSearch(),base=data.figure8;if(state.search===search.candidates.length-1)return base;if(!figureCache.has(state.search))figureCache.set(state.search,{...base,t:c.t,positions:c.positions,summary:{...base.summary,period:c.period},initial:{positions:search.initialPositions,velocities:[[c.parameters[0],c.parameters[1]], [c.parameters[0],c.parameters[1]],[-2*c.parameters[0],-2*c.parameters[1]]]}});return figureCache.get(state.search);}
+function exact(s){if(!exactCache.has(s))exactCache.set(s,s.t.map(t=>s.initial.positions.map(p=>{const a=s.summary.omega*t;return [p[0]*Math.cos(a)-p[1]*Math.sin(a),p[0]*Math.sin(a)+p[1]*Math.cos(a)];})));return exactCache.get(s);}
+
+async function readData(path){
+ const response=await fetch(path,{signal:AbortSignal.timeout(20000)});
+ if(!response.ok)throw new Error('The trajectory data did not load.');
+ return response.json();
+}
+
+function updateEnsembleStatus(){
+ const ready=!!ensemble;
+ $('future').disabled=!ready;
+ $('ensemble-toggle').disabled=!ready;
+ $('retry-ensemble').hidden=!ensembleError;
+ $('ensemble-status').textContent=ready?'':ensembleError
+  ?'The extra nearby futures could not load. The checked pair above still works.'
+  :'Loading the extra nearby futures. The checked pair is ready to explore.';
+}
+
+function ensureEnsemble(){
+ if(ensemble||ensemblePromise)return ensemblePromise;
+ ensembleError=false;
+ updateEnsembleStatus();
+ ensemblePromise=readData('/ensemble.json').then(result=>{
+  if(!Array.isArray(result.members)||result.members.length!==8)throw new Error('Nearby futures are incomplete.');
+  ensemble=result;
+  if(state.case==='chaos')renderSystem(false);
+ }).catch(()=>{
+  ensembleError=true;
+  if(state.case==='chaos'){
+   $('ensemble-toggle').checked=false;
+   scene.showEnsemble=false;
+  }
+ }).finally(()=>{
+  ensemblePromise=null;
+  updateEnsembleStatus();
+ });
+ return ensemblePromise;
+}
+
+// Range input can arrive more often than the display refreshes. Keep only the
+// latest value for each control, then update its scene at most once per frame.
+const pendingInputs=new Map();
+let inputFrame=false;
+function scheduleInput(key,update){
+ pendingInputs.set(key,update);
+ if(inputFrame)return;
+ inputFrame=true;
+ requestAnimationFrame(()=>{
+  inputFrame=false;
+  const updates=[...pendingInputs.values()];
+  pendingInputs.clear();
+  updates.forEach(apply=>apply());
+ });
+}
 function renderSystem(reset=true){
  let compare=null,cloud=null;
  if(state.case==='figure8'){current=figureData();compare=search.candidates[0].positions;}
- else if(state.case==='chaos'){current=data.chaos;compare=state.future===0?data.chaos.perturbed:ensemble.members[state.future].positions;cloud=ensemble;}
+ else if(state.case==='chaos'){current=data.chaos;compare=!ensemble||state.future===0?data.chaos.perturbed:ensemble.members[state.future].positions;cloud=ensemble;}
  else if(state.case==='symmetry'){current=state.polygon===3?data.triangle:data.ring;compare=exact(current);}
  else {current=state.custom||data.figure8;}
- scene.setData(current,compare,cloud,reset);scene.showCompare=$('compare').checked;scene.showForces=$('forces').checked;scene.showEnsemble=$('ensemble-toggle').checked&&state.case==='chaos';scene.update(state.p);
+ scene.setData(current,compare,cloud,reset,$('ensemble-toggle').checked&&state.case==='chaos');scene.showCompare=$('compare').checked;scene.showForces=$('forces').checked;scene.showEnsemble=$('ensemble-toggle').checked&&state.case==='chaos';scene.update(state.p);
  $('body-count').textContent=current.masses.length+' bodies';$('time-end').textContent=current.t.at(-1).toFixed(2)+' time units';$('selected-body').hidden=true;
  $('plane-note').textContent=scene.mode==='time'?'Height = elapsed time, not physical motion':current.initial.positions.some((p,i)=>Math.abs(p[2]||0)>1e-10||Math.abs(current.initial.velocities[i][2]||0)>1e-10)?'Spatial motion · physical height':'Planar motion, viewed in 3D';
  if(state.case==='figure8')$('stage-status').textContent=state.search<7?'Search candidate '+(state.search+1)+' / 8':'Verified periodic orbit';
@@ -38,7 +96,7 @@ function choose(which,{preserve=false}={}){
  $('ensemble-option').hidden=which!=='chaos';$('compare').disabled=which==='custom';$('compare').checked=which==='chaos';$('ensemble-toggle').checked=false;
  $('time-view').disabled=which==='custom';$('time-view').title=which==='custom'?'Time sculpture is available for the saved planar experiments.':'Show elapsed time as height';if(which==='custom'&&scene.mode==='time')setView('orbit',false);
  if(!preserve)state.p=which==='figure8'?.08:0;
- history.replaceState(null,'','#'+which);$('mobile-context').textContent=c.title.replace('<br>',' ');renderSystem();icons();
+ history.replaceState(null,'','#'+which);$('mobile-context').textContent=c.description;renderSystem();if(which==='chaos')ensureEnsemble();icons();
 }
 function updateSearch(){const c=currentSearch();$('search-step').value=state.search;$('search-step').setAttribute('aria-valuetext',`Candidate ${state.search+1} of ${search.candidates.length}`);$('search-number').textContent=(state.search+1)+' / '+search.candidates.length;$('search-error').textContent=sci(c.diagnostics.objectiveNorm);$('closure-scale').textContent='±'+sci(drawClosure($('closure'),c));}
 function setSearch(i){state.search=Math.max(0,Math.min(search.candidates.length-1,i));updateSearch();if(state.case==='figure8'){renderSystem(false);plot?.setProgress(state.search/7);}}
@@ -50,9 +108,9 @@ function updateEvidence(){
   $('stat-two-label').textContent='Tighter rerun, final candidate';$('stat-two').textContent=sci(data.figure8.diagnostics.maxNumericalError);$('stat-three').textContent=sci(currentSearch().diagnostics.maxEnergyDrift);
   $('evidence-note').textContent='Eight record-low candidates from the actual search. The objective includes position and velocity. The final search error is 1.35e−13; the independently integrated playback has a different tolerance. No new orbit or general theorem is claimed.';
  }else if(state.case==='chaos'){
-  const member=ensemble.members[state.future],diff=state.future===0?d.separation:member.diagnostics.separation,ts=state.future===0?base.t:ensemble.t;
+  const future=ensemble?state.future:0,member=ensemble?.members[future],diff=future===0?d.separation:member.diagnostics.separation,ts=future===0?base.t:ensemble.t;
   series=[{color:COLORS[1],points:ts.map((t,i)=>[t,diff[i]])},{color:COLORS[0],points:base.t.map((t,i)=>[t,Math.max(d.numericalError[i],d.perturbedNumericalError[i])])}];
-  const factor=diff.at(-1)/diff[0];$('growth').innerHTML=Math.round(factor).toLocaleString()+'<span>×</span>';$('future-number').textContent=(state.future+1)+' / 8';$('future').setAttribute('aria-valuetext',`Future ${state.future+1} of 8`);$('chart-title').textContent='Starting-state sensitivity vs solver disagreement';$('stat-one-label').textContent=state.future===0?'Separation ÷ solver disagreement':'Final separation for this starting state';$('stat-one').textContent=state.future===0?fmtBig(diff.at(-1)/Math.max(d.maxNumericalError,d.maxPerturbedNumericalError)):sci(diff.at(-1));$('stat-one-detail').textContent=state.future===0?'at t = 40; the main pair is separately verified':'RMS position difference, distance units';$('stat-two-label').textContent='Main pair: tighter-solver disagreement';$('stat-two').textContent=sci(Math.max(d.maxNumericalError,d.maxPerturbedNumericalError));$('stat-three').textContent=sci(Math.max(d.maxEnergyDrift,member.diagnostics.maxEnergyDrift));$('chart-legend').innerHTML='<span style="--color:#ffa369">Different starting state</span><span style="--color:#70d8ff">Main pair’s numerical check</span>';
+  const factor=diff.at(-1)/diff[0];$('growth').innerHTML=Math.round(factor).toLocaleString()+'<span>×</span>';$('future-number').textContent=ensemble?(future+1)+' / 8':'Checked pair';$('future').setAttribute('aria-valuetext',ensemble?`Future ${future+1} of 8`:'Checked pair');$('chart-title').textContent='Starting-state sensitivity vs solver disagreement';$('stat-one-label').textContent=future===0?'Separation ÷ solver disagreement':'Final separation for this starting state';$('stat-one').textContent=future===0?fmtBig(diff.at(-1)/Math.max(d.maxNumericalError,d.maxPerturbedNumericalError)):sci(diff.at(-1));$('stat-one-detail').textContent=future===0?'at t = 40; the main pair is separately verified':'RMS position difference, distance units';$('stat-two-label').textContent='Main pair: tighter-solver disagreement';$('stat-two').textContent=sci(Math.max(d.maxNumericalError,d.maxPerturbedNumericalError));$('stat-three').textContent=sci(Math.max(d.maxEnergyDrift,future===0?d.maxPerturbedEnergyDrift:member.diagnostics.maxEnergyDrift));$('chart-legend').innerHTML='<span style="--color:#ffa369">Different starting state</span><span style="--color:#70d8ff">Main pair’s numerical check</span>';
   $('evidence-note').textContent='The changed start is recentered to remove center-of-mass drift. The main pair has independent tighter reruns; the additional seven futures have energy checks only. The ensemble is not a probability distribution or a rigorous uncertainty region.';
  }else{
   series=[{color:COLORS[0],points:base.t.map((t,i)=>[t,d.numericalError?.[i]||0])},{color:COLORS[2],points:base.t.map((t,i)=>[t,d.energyDrift[i]])}];$('chart-title').textContent=state.case==='symmetry'?'Numerical motion checked against an exact formula':'Your calculation, checked a second time';$('stat-one-label').textContent=state.case==='symmetry'?'Largest position error vs exact formula':state.custom?'Accepted integration steps':'Awaiting your experiment';$('stat-one').textContent=state.case==='symmetry'?sci(d.maxNumericalError):state.custom?base.summary.accepted.toLocaleString():'Ready';$('stat-one-detail').textContent=state.case==='symmetry'?'RMS position difference, distance units':'Start with a preset and change its initial conditions';$('stat-two-label').textContent=state.case==='symmetry'?'Return-to-start state error':'Tighter-solver disagreement';$('stat-two').textContent=sci(state.case==='symmetry'?base.summary.periodicResidual:d.maxNumericalError);$('stat-three').textContent=sci(d.maxEnergyDrift);$('chart-legend').innerHTML='<span style="--color:#70d8ff">Position discrepancy (units)</span><span style="--color:#c1a0ff">Relative energy change</span>';
@@ -124,7 +182,7 @@ function enterWatchChapter(index){
  const c=watchChapters[index];watchState.index=index;watchState.elapsed=0;watchState.failed=false;watchState.lastTrial=-1;watchState.lastFuture=-1;state.search=7;state.future=0;state.polygon=c.polygon||3;$('polygon-count').value=state.polygon;$('future').value=0;
  choose(c.case);playState(false);setView(c.view||'orbit');$('compare').checked=!!c.compare;$('forces').checked=!!c.forces;$('ensemble-toggle').checked=!!c.ensemble;state.p=c.from;renderSystem();updateSearch();scene.auto=!reduced;scene.controls.enabled=false;
  if(c.inspect)bodyDetails(0);
- $('watch-chapter').textContent=`${String(index+1).padStart(2,'0')} / ${watchChapters.length} · WATCH THE LAB`;$('watch-title').textContent=c.title;$('watch-copy').textContent=c.copy;
+ $('watch-chapter').textContent=`${String(index+1).padStart(2,'0')} / ${watchChapters.length} · WATCH THE LAB`;$('watch-title').textContent=c.title;$('watch-copy').textContent=c.ensemble&&!ensemble?'The extra nearby futures are unavailable on this run. The checked starting-state pair remains visible; both histories follow the same laws.':c.copy;
  if(c.live){state.custom=null;renderSystem();$('stage-status').textContent='Calculating new orbit · reference shown';applyRecipe(c.recipe);run();}
  if(c.evidence&&!state.custom){watchState.failed=true;$('watch-copy').textContent='This device could not finish the live calculation. The app reports that failure rather than inventing a result. Preset experiments remain available.';}
  updateWatchFact();updateWatchProgress();
@@ -134,7 +192,7 @@ function updateWatchFact(){const c=watchChapters[watchState.index];let fact;
  if(state.worker)fact=$('compute-progress').textContent;
  else if(watchState.failed)fact='Live calculation unavailable on this run · continuing with the demonstration';
  else if(c.search)fact=`Trial ${state.search+1} of 8 · return error ${sci(currentSearch().diagnostics.objectiveNorm)}`;
- else if(c.ensemble)fact=`Future ${state.future+1} of 8 · final separation growth ${$('growth').textContent}`;
+ else if(c.ensemble)fact=ensemble?`Future ${state.future+1} of 8 · final separation growth ${$('growth').textContent}`:'Extra futures unavailable · showing the checked starting-state pair';
  else if(c.case==='chaos')fact=`At t = 40: ${Math.round(data.chaos.diagnostics.separation.at(-1)/data.chaos.diagnostics.separation[0]).toLocaleString()}× growth · both main trajectories checked`;
  else if(c.case==='symmetry')fact=`Numerical vs exact position error: ${sci(current.diagnostics.maxNumericalError)} units`;
  else if(c.case==='custom'&&state.custom)fact=`Tighter-run disagreement ${sci(state.custom.diagnostics.maxNumericalError)} units · energy change ${sci(state.custom.diagnostics.maxEnergyDrift)}${state.custom.diagnostics.relativeDisagreement>.001?' · LOW NUMERICAL AGREEMENT':''}`;
@@ -150,7 +208,7 @@ function tickWatch(dt){
  if(c.live&&!state.custom&&!watchState.failed){watchState.failed=true;$('watch-copy').textContent='The live calculation could not finish on this device. The app reports the failure and continues; no replacement result is presented as a successful calculation.';}
  watchState.elapsed+=dt;const fraction=Math.min(1,watchState.elapsed/c.duration);
  if(c.search){const trial=Math.min(7,Math.floor(fraction*8));if(trial!==watchState.lastTrial){watchState.lastTrial=trial;setSearch(trial);}}
- if(c.ensemble){const future=Math.min(7,Math.floor(fraction*8));if(future!==watchState.lastFuture){watchState.lastFuture=future;state.future=future;$('future').value=future;renderSystem(false);}}
+ if(c.ensemble&&ensemble){const future=Math.min(7,Math.floor(fraction*8));if(future!==watchState.lastFuture){watchState.lastFuture=future;state.future=future;$('future').value=future;renderSystem(false);}}
  state.p=c.from+(c.to-c.from)*fraction;updateProgress();updateWatchFact();updateWatchProgress();
  if(watchState.elapsed>=c.duration)enterWatchChapter(watchState.index+1);
 }
@@ -166,18 +224,33 @@ function stopWatch(restore=true){
 
 // Reference material stays usable even when data or WebGL cannot initialize.
 function bindReference(){
+ const compactView=matchMedia('(max-width: 820px)');
+ const syncViewMenu=()=>{$('view-menu').open=!compactView.matches;};
+ syncViewMenu();
+ compactView.addEventListener?.('change',syncViewMenu);
  $('share-close').addEventListener('click',()=>$('share-dialog').close());
  const openMethod=()=>$('method-dialog').showModal();
  $('method-open').addEventListener('click',openMethod);
+ $('fallback-math').addEventListener('click',openMethod);
  $('evidence-method').addEventListener('click',openMethod);
  $('method-close').addEventListener('click',()=>$('method-dialog').close());
  $('method-dialog').addEventListener('click',e=>{if(e.target===$('method-dialog')){const r=$('method-dialog').getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)$('method-dialog').close();}});
 }
 function setLabReady(ready){
- document.querySelectorAll('.experiment-nav button, .lab button, .lab input, .lab select, #tour, #watch, #share').forEach(control=>control.disabled=!ready);
+ document.querySelectorAll('.experiment-nav button, .lab button, .lab input, .lab select, #tour, #watch, #share, #quick-start').forEach(control=>control.disabled=!ready);
  $('experiment-workspace').setAttribute('aria-busy',!ready);$('evidence-chart').setAttribute('aria-disabled',!ready);$('evidence-chart').tabIndex=ready?0:-1;
 }
 function bind(){
+ $('quick-start').addEventListener('click',()=>{
+  closeTour();
+  choose('chaos');
+  state.p=.72;
+  $('compare').checked=true;
+  scene.showCompare=true;
+  updateProgress();
+  playState(!reduced);
+ });
+ $('retry-ensemble').addEventListener('click',ensureEnsemble);
  $('watch').addEventListener('click',startWatch);$('watch-pause').addEventListener('click',pauseWatch);$('watch-exit').addEventListener('click',()=>stopWatch());
  document.addEventListener('keydown',e=>{if(!watchState.active)return;if(e.key==='Escape'){e.preventDefault();stopWatch();}if(e.key==='Tab'){const first=$('watch-pause'),last=$('watch-exit');if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}if(e.code==='Space'&&!['BUTTON','INPUT','SELECT'].includes(e.target.tagName)){e.preventDefault();pauseWatch();}});
  document.querySelector('.stage-column').appendChild($('tour-card'));
@@ -192,15 +265,15 @@ function bind(){
  document.querySelectorAll('[data-case]').forEach(b=>b.addEventListener('click',()=>{closeTour();choose(b.dataset.case);playState(!reduced);}));
  $('play').addEventListener('click',()=>{if(state.p>=1)state.p=0;playState(!state.playing);});$('restart').addEventListener('click',()=>{state.p=0;updateProgress();playState(!reduced);});$('timeline').addEventListener('input',e=>{playState(false);state.p=Number(e.target.value)/10000;updateProgress();});$('speed').addEventListener('change',e=>state.speed=Number(e.target.value));
  $('orbit-view').addEventListener('click',()=>setView('orbit'));$('time-view').addEventListener('click',()=>setView('time'));$('top-view').addEventListener('click',()=>scene.resetCamera(true));$('reset-view').addEventListener('click',()=>scene.resetCamera());$('camera-drift').addEventListener('click',()=>{scene.auto=!scene.auto;$('camera-drift').setAttribute('aria-pressed',scene.auto);});
- $('compare').addEventListener('change',()=>{scene.showCompare=$('compare').checked;updateProgress();});$('forces').addEventListener('change',()=>{scene.showForces=$('forces').checked;updateProgress();});$('ensemble-toggle').addEventListener('change',()=>{scene.showEnsemble=$('ensemble-toggle').checked;updateProgress();});
- $('search-step').addEventListener('input',e=>{stopSearch();setSearch(Number(e.target.value));});$('search-play').addEventListener('click',()=>{state.searchPlaying=!state.searchPlaying;if(state.searchPlaying){state.searchClock=0;setSearch(0);state.p=1;playState(false);updateProgress();}$('search-play').innerHTML=`<i data-lucide="${state.searchPlaying?'pause':'play'}"></i>${state.searchPlaying?'Pause search':'Watch search'}`;icons();});
- $('future').addEventListener('input',e=>{state.future=Number(e.target.value);$('compare').checked=true;renderSystem(false);});$('jump-divergence').addEventListener('click',()=>{state.p=.72;$('compare').checked=true;scene.showCompare=true;updateProgress();playState(!reduced);});$('polygon-count').addEventListener('change',e=>{state.polygon=Number(e.target.value);state.p=0;renderSystem();});
+ $('compare').addEventListener('change',()=>{scene.showCompare=$('compare').checked;updateProgress();});$('forces').addEventListener('change',()=>{scene.showForces=$('forces').checked;updateProgress();});$('ensemble-toggle').addEventListener('change',()=>renderSystem(false));
+ $('search-step').addEventListener('input',e=>{stopSearch();const value=Number(e.target.value);scheduleInput('search',()=>{if(state.case==='figure8')setSearch(value);});});$('search-play').addEventListener('click',()=>{state.searchPlaying=!state.searchPlaying;if(state.searchPlaying){state.searchClock=0;setSearch(0);state.p=1;playState(false);updateProgress();}$('search-play').innerHTML=`<i data-lucide="${state.searchPlaying?'pause':'play'}"></i>${state.searchPlaying?'Pause search':'Watch search'}`;icons();});
+ $('future').addEventListener('input',e=>{const value=Number(e.target.value);scheduleInput('future',()=>{if(state.case!=='chaos'||!ensemble)return;state.future=value;$('compare').checked=true;renderSystem(false);});});$('jump-divergence').addEventListener('click',()=>{state.p=.72;$('compare').checked=true;scene.showCompare=true;updateProgress();playState(!reduced);});$('polygon-count').addEventListener('change',e=>{state.polygon=Number(e.target.value);state.p=0;renderSystem();});
  $('break-symmetry').addEventListener('click',()=>{if(state.worker)finishWorker();choose('custom');$('starting-system').value=state.polygon===3?'triangle':'ring';$('duration').value='6.33';$('mass').value='1.1';$('velocity').value='100';$('lift').value='.12';$('kick').value='0';$('lift-value').textContent='0.12';$('velocity-value').textContent='100%';$('kick-value').textContent='0.000';run();});
  $('velocity').addEventListener('input',e=>$('velocity-value').textContent=e.target.value+'%');$('kick').addEventListener('input',e=>$('kick-value').textContent=Number(e.target.value).toFixed(3));$('lift').addEventListener('input',e=>$('lift-value').textContent=Number(e.target.value).toFixed(2));$('custom-controls').addEventListener('submit',e=>{e.preventDefault();run();});$('cancel-run').addEventListener('click',()=>{finishWorker();$('compute-progress').textContent='Calculation cancelled.';});
  $('body-close').addEventListener('click',()=>$('selected-body').hidden=true);
  $('tour').addEventListener('click',()=>tourStep(0));$('tour-next').addEventListener('click',()=>tourStep(state.tour+1));$('tour-prev').addEventListener('click',()=>tourStep(state.tour-1));$('tour-close').addEventListener('click',closeTour);
  $('fullscreen').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.querySelector('.stage-column').requestFullscreen();}catch{toast('Fullscreen is unavailable in this browser.');}});
- $('share').addEventListener('click',async()=>{const url=new URL(location.href);url.hash=encodeURIComponent(JSON.stringify({v:1,case:state.case,p:Math.round(state.p*10000)/10000,search:state.search,future:state.future,polygon:state.polygon,view:scene.mode,compare:$('compare').checked,ensemble:$('ensemble-toggle').checked,forces:$('forces').checked,speed:state.speed,recipe:state.case==='custom'?formValues():undefined}));try{await navigator.clipboard.writeText(url.href);toast('Link copied with these experiment settings.');}catch{const showLink=()=>{$('share-url').value=url.href;$('share-dialog').showModal();$('share-url').focus();$('share-url').select();};if(navigator.share){try{await navigator.share({title:'Gravity, Unscripted',url:url.href});}catch(error){if(error.name!=='AbortError')showLink();}}else showLink();}});
+ $('share').addEventListener('click',async()=>{const url=new URL(location.href);url.hash=encodeURIComponent(JSON.stringify({v:1,case:state.case,p:Math.round(state.p*10000)/10000,search:state.search,future:state.future,polygon:state.polygon,view:scene.mode,compare:$('compare').checked,ensemble:$('ensemble-toggle').checked,forces:$('forces').checked,speed:state.speed,recipe:state.case==='custom'?formValues():undefined}));try{await navigator.clipboard.writeText(url.href);toast(state.case==='custom'?'Starting conditions copied, including pending changes. Calculate to reproduce the orbit.':'Starting conditions and view copied.');}catch{const showLink=()=>{$('share-url').value=url.href;$('share-dialog').showModal();$('share-url').focus();$('share-url').select();};if(navigator.share){try{await navigator.share({title:'Gravity, Unscripted',url:url.href});}catch(error){if(error.name!=='AbortError')showLink();}}else showLink();}});
  $('evidence-chart').addEventListener('pointerdown',e=>{const box=$('evidence-chart').getBoundingClientRect(),f=Math.max(0,Math.min(1,(e.clientX-box.left-plot.left)/(plot.right-plot.left)));if(state.case==='figure8'){stopSearch();setSearch(Math.round(f*7));}else{state.p=f;playState(false);updateProgress();}});
  new ResizeObserver(()=>{updateEvidence();if(state.case==='figure8')updateSearch();}).observe($('evidence-chart'));
  document.addEventListener('keydown',e=>{if(e.code==='Space'&&e.target===scene.renderer.domElement&&!$('method-dialog').open){e.preventDefault();if(state.p>=1)state.p=0;playState(!state.playing);}});
@@ -209,6 +282,6 @@ function animate(now){const dt=prev?Math.min((now-prev)/1000,.06):0;prev=now;if(
 // Render static controls before either trajectory loading or WebGL can fail.
 bindReference();setLabReady(false);icons();
 try{
- const responses=await Promise.all(['/trajectories.json','/search.json','/ensemble.json'].map(async p=>{const r=await fetch(p,{signal:AbortSignal.timeout(20000)});if(!r.ok)throw new Error('The trajectory data did not load.');return r.json();}));data=Object.fromEntries(responses[0].scenarios.map(s=>[s.id,s]));search=responses[1];ensemble=responses[2];
+ const responses=await Promise.all(['/trajectories.json','/search.json'].map(readData));data=Object.fromEntries(responses[0].scenarios.map(s=>[s.id,s]));search=responses[1];
  scene=new GravityScene($('viewport'),bodyDetails);setLabReady(true);bind();restoreLink();updateSearch();if(!sharedRecipe)playState(!reduced);icons();$('loading')?.remove();$('watch').disabled=false;requestAnimationFrame(animate);
-}catch(e){setLabReady(false);$('experiment-workspace').setAttribute('aria-busy','false');$('stage-status').textContent='Unable to open the 3D view';let fallback=$('loading');if(!fallback){fallback=document.createElement('div');fallback.className='load-message';$('viewport').appendChild(fallback);}fallback.textContent='The 3D laboratory could not load. Check your connection and WebGL support, then reload. You can still read the mathematics and download the original calculations below.';const retry=document.createElement('button');retry.textContent='Reload laboratory';retry.onclick=()=>location.reload();fallback.appendChild(retry);console.error(e);}
+}catch(e){setLabReady(false);document.body.classList.add('lab-unavailable');$('quick-start').disabled=true;$('experiment-workspace').setAttribute('aria-busy','false');$('stage-status').textContent=data&&search?'Unable to open the 3D view':'Trajectory data unavailable';$('fallback-preview').hidden=false;$('fallback-math').disabled=false;let fallback=$('loading');if(!fallback){fallback=document.createElement('div');fallback.className='load-message';$('viewport').appendChild(fallback);}fallback.textContent=data&&search?'The interactive view needs WebGL. You can still read the mathematics and download the original calculations below.':'The orbit data could not load. You can still read the mathematics and download the original calculations below.';const retry=document.createElement('button');retry.textContent='Reload laboratory';retry.onclick=()=>location.reload();fallback.appendChild(retry);console.error(e);}

@@ -1,3 +1,19 @@
+# Current development validation
+
+The current presentation keeps all four experiments, the solver, saved trajectories and original calculation archive. It adds a plain first action, concise motivation, mobile View disclosure, source/portfolio links and a non-WebGL orbit preview made from the saved figure-eight data. Nearby-future loading is independent, with scoped failure/retry. Recently viewed scene geometry has a bounded eight-entry cache; range events are coalesced to the display refresh. A local 27-icon subset replaces the full icon catalogue.
+
+Validation completed in the development checkout:
+
+- `npm run build` and `npm test` passed. Added regression coverage confirms that an optional future-data failure leaves independent experiments usable and retry recovers; sharing pending starting conditions does not replace the displayed calculation.
+- Chromium WebGL with software rendering passed the real worker, cancellation, tour/watch controls, optional-data failure, and scene-cache reuse/bound checks.
+- Fresh `/#chaos` visits at 320, 390 and 768 px retained an onscreen first action, no horizontal overflow, and an operable View disclosure. Touch layout was emulated; physical gestures were not certified.
+- A WebGL-disabled browser showed the deliberate preview, an accessible mathematics dialog and a working original-calculation download.
+- No solver, saved trajectory or original calculation archive content changed. Existing independent numerical comparisons remain in the test suite.
+
+These checks do not establish production deployment status, hardware frame rates, Safari/Firefox behavior, real-device touch/fullscreen behavior or assistive-technology conformance. Software-renderer output is browser evidence, not a GPU performance benchmark. Numerical rerun agreement is not a rigorous error bound.
+
+The following notes describe earlier versions and their original testing limits.
+
 # Migration validation
 
 - Static JavaScript syntax build: passed.

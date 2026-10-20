@@ -106,3 +106,46 @@ body.watching{overflow:hidden}.watching .lab{position:fixed;inset:0;z-index:40;b
 #share-dialog h2{margin:0}
 #share-dialog .range-label{margin:18px 0 8px}
 #share-url{width:100%;padding:12px;border:1px solid #62748b;border-radius:6px;background:#080f1a;color:var(--text);font:.875rem var(--mono)}
+
+/* Orient visitors before presenting the full laboratory. */
+.lab-intro{display:flex;align-items:center;justify-content:space-between;gap:22px;max-width:1450px;margin:auto;padding:18px 32px;border-bottom:1px solid var(--line2)}
+.lab-intro p{max-width:78ch;color:var(--muted);font-size:.9375rem;line-height:1.65}
+.lab-intro button{flex-shrink:0;min-height:44px}
+.view-menu{position:absolute;top:58px;left:22px;right:22px;z-index:4;pointer-events:none}
+.view-menu summary{display:none;cursor:pointer;list-style:none;align-items:center;gap:9px;width:max-content;min-height:44px;padding:10px 13px;border:1px solid #53667f;border-radius:7px;background:var(--panel2);font-size:.875rem;pointer-events:auto}
+.view-menu summary::-webkit-details-marker{display:none}
+.view-menu summary svg{width:15px;height:15px}
+.view-menu summary:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.view-menu .view-buttons{position:static;pointer-events:auto;width:max-content;max-width:100%;flex-wrap:wrap}
+.watching .view-menu{display:none}
+footer>span:first-child{display:flex;flex-wrap:wrap;gap:8px 18px}
+.fallback-preview{padding:10px 24px 28px;max-width:680px;margin:auto;text-align:center}
+.fallback-preview>svg{display:block;width:min(100%,400px);height:auto;margin:0 auto 18px}
+.fallback-preview p{color:var(--muted);font-size:1rem;line-height:1.7;margin-top:12px}
+.fallback-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:16px;margin-top:20px}
+.fallback-actions button{min-height:44px}
+.lab-unavailable .experiment-nav,.lab-unavailable .view-menu,.lab-unavailable .transport,.lab-unavailable .stage-options,.lab-unavailable .stage-bottom,.lab-unavailable .mobile-context,.lab-unavailable .inspector,.lab-unavailable .evidence-section,.lab-unavailable #quick-start{display:none}
+.lab-unavailable .lab{grid-template-columns:1fr}
+.lab-unavailable .stage-column{position:static;border:0}
+.lab-unavailable .stage-shell{height:auto;min-height:0}
+.lab-unavailable .stage-meta{position:static;padding:20px 24px}
+.lab-unavailable #viewport{position:static;overflow:visible}
+.lab-unavailable .load-message{position:static;padding:12px 24px 20px;gap:12px;max-width:640px;margin:auto}
+.lab-unavailable .load-message button{min-height:44px}
+@media(max-width:820px){
+ .lab-intro{padding:16px 20px;align-items:flex-start;flex-direction:column;gap:12px}
+ .lab-intro p{font-size:.875rem;line-height:1.6}
+ .mobile-context{font-size:.9375rem;line-height:1.6;padding:16px 20px 12px;color:var(--muted)}
+ .view-menu{left:14px;right:14px;top:54px}
+ .view-menu summary{display:inline-flex}
+ .view-menu[open] .view-buttons{padding:9px;margin-top:6px;border:1px solid #53667f;border-radius:8px;background:#0d1623f5;box-shadow:0 8px 24px #0005}
+ .stage-shell{height:clamp(280px,42svh,360px)}
+ .watching .stage-shell{height:auto}
+ .lab-unavailable .stage-shell{height:auto}
+ .fallback-preview{padding-inline:20px}
+ footer{flex-direction:column}
+}
+/* The short experiment is the primary invitation; the long watch remains optional. */
+.watch-button{background:var(--panel2);color:var(--text);border-color:#354559}
+.watch-button:hover{background:#1c2b3d}
+.lab-unavailable #watch,.lab-unavailable #tour,.lab-unavailable #share{display:none}

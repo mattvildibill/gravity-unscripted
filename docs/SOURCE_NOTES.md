@@ -59,9 +59,9 @@ It does not execute WebGL or certify browser layout. Separate mathematical tests
 verified the live solver against an analytic binary and saved SciPy results, and
 checked actual Three.js tube geometry against time-matched body positions.
 
-Remaining release limitation: browser visual QA was unavailable in the managed
-static-site preview environment. Real-device layout, touch gestures, fullscreen,
-and assistive-technology behavior still require manual acceptance testing.
+Historical review limit: browser visual QA was unavailable in that static-site
+preview environment. Current Chromium checks are summarized in `VALIDATION.md`;
+physical touch, hardware performance and assistive-technology acceptance remain separate.
 
 ## Hands-free watch mode
 

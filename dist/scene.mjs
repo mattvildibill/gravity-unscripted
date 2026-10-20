@@ -5,6 +5,7 @@ class Path extends THREE.Curve{constructor(points){super();this.points=points;}g
 export class GravityScene{
  constructor(container,onSelect){
   this.container=container;this.onSelect=onSelect;this.mode='orbit';this.progress=0;this.auto=false;this.showCompare=false;this.showForces=false;this.extent=1;this.labels=[];this.tubes=[];this.bodies=[];this.ghosts=[];this.arrows=[];
+  this.sceneCache=new Map();this.objectIds=new WeakMap();this.nextObjectId=1;this.activeKey=null;
   this.scene=new THREE.Scene();this.scene.fog=new THREE.FogExp2(0x080b12,.015);
   this.camera=new THREE.PerspectiveCamera(38,1,.01,2000);this.camera.position.set(0,3.1,5);
   this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:'high-performance'});this.renderer.setPixelRatio(Math.min(devicePixelRatio,2));this.renderer.setClearColor(0x080b12,0);this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.2;
@@ -17,9 +18,51 @@ export class GravityScene{
  }
  resize(){const {width,height}=this.container.getBoundingClientRect();if(!width||!height)return;this.renderer.setSize(width,height);this.camera.aspect=width/height;this.camera.updateProjectionMatrix();if(this.data)this.resetCamera();}
  world(p,f=0){return new THREE.Vector3(p[0]-this.center[0],(p[2]||0)-this.center[2]+(this.mode==='time'?(f-.5)*this.extent*2.3:0),p[1]-this.center[1]);}
- clear(){while(this.content.children.length){const o=this.content.children[0];this.content.remove(o);o.traverse(x=>{x.geometry?.dispose();if(x.material){const ms=Array.isArray(x.material)?x.material:[x.material];ms.forEach(m=>m.dispose());}});}this.labels.forEach(x=>x.remove());this.labels=[];this.tubes=[];this.bodies=[];this.ghosts=[];this.arrows=[];}
- setData(data,comparison=null,ensemble=null,reset=true){
-  this.data=data;this.comparison=comparison;this.ensemble=ensemble;this.clear();
+ objectId(value){
+  if(!value)return 0;
+  if(!this.objectIds.has(value))this.objectIds.set(value,this.nextObjectId++);
+  return this.objectIds.get(value);
+ }
+ disposeCached(entry){
+  const geometries=new Set(),materials=new Set();
+  entry.content.traverse(object=>{
+   if(object.geometry)geometries.add(object.geometry);
+   if(object.material)(Array.isArray(object.material)?object.material:[object.material]).forEach(material=>materials.add(material));
+  });
+  geometries.forEach(geometry=>geometry.dispose());
+  materials.forEach(material=>material.dispose());
+  entry.labels.forEach(label=>label.remove());
+ }
+ trimCache(){
+  // A few recently visited presets stay ready for range-slider scrubbing.
+  // The bound also limits retained GPU buffers when exploring many systems.
+  while(this.sceneCache.size>8){
+   const [key,entry]=this.sceneCache.entries().next().value;
+   this.sceneCache.delete(key);
+   this.disposeCached(entry);
+  }
+ }
+ activateCached(key,entry,reset){
+  this.scene.remove(this.content);
+  this.labels.forEach(label=>label.remove());
+  Object.assign(this,entry);
+  this.activeKey=key;
+  this.scene.add(this.content);
+  this.labels.forEach(label=>this.container.appendChild(label));
+  this.scene.fog.density=.012/this.extent;
+  this.sceneCache.delete(key);
+  this.sceneCache.set(key,entry);
+  if(reset)this.resetCamera();
+  this.update(this.progress);
+ }
+ setData(data,comparison=null,ensemble=null,reset=true,drawEnsemble=false){
+  this.data=data;this.comparison=comparison;this.ensemble=ensemble;
+  const key=[this.mode,this.objectId(data),this.objectId(comparison),this.objectId(ensemble),drawEnsemble].join(':');
+  const cached=this.sceneCache.get(key);
+  if(cached){this.activateCached(key,cached,reset);return;}
+  this.scene.remove(this.content);this.labels.forEach(label=>label.remove());
+  this.content=new THREE.Group();this.scene.add(this.content);
+  this.labels=[];this.tubes=[];this.bodies=[];this.ghosts=[];this.arrows=[];
   let lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];
   for(const arr of [data.positions,comparison||data.positions,...(ensemble?ensemble.members.map(m=>m.positions):[])])for(const row of arr)for(const p of row)for(let j=0;j<3;j++){const x=p[j]||0;lo[j]=Math.min(lo[j],x);hi[j]=Math.max(hi[j],x);}
   this.center=lo.map((v,i)=>(v+hi[i])/2);this.extent=Math.max(...hi.map((v,i)=>v-lo[i]),1)*.5;
@@ -37,8 +80,10 @@ export class GravityScene{
    const outline=new THREE.Mesh(new THREE.SphereGeometry(radius*1.45,14,10),new THREE.MeshBasicMaterial({color:COLORS[body%8],wireframe:true,transparent:true,opacity:.48,depthWrite:false}));this.content.add(outline);this.ghosts.push(outline);
    if(comparison){const positions=comparison.map((row,i)=>this.world(row[body],i/(comparison.length-1)));const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(positions),new THREE.LineDashedMaterial({color:COLORS[body%8],transparent:true,opacity:.45,dashSize:this.extent*.02,gapSize:this.extent*.015,depthWrite:false}));line.computeLineDistances();line.userData.comparison=true;this.content.add(line);}
   }
-  if(ensemble)for(const member of ensemble.members)for(let body=0;body<data.masses.length;body++){const pts=member.positions.map((row,i)=>this.world(row[body],i/(member.positions.length-1)));const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:COLORS[body],transparent:true,opacity:.105,depthWrite:false}));line.userData.ensemble=true;this.content.add(line);}
+  if(ensemble&&drawEnsemble)for(const member of ensemble.members)for(let body=0;body<data.masses.length;body++){const pts=member.positions.map((row,i)=>this.world(row[body],i/(member.positions.length-1)));const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:COLORS[body],transparent:true,opacity:.105,depthWrite:false}));line.userData.ensemble=true;this.content.add(line);}
   const grid=new THREE.GridHelper(this.extent*5,20,0x24354a,0x172333);grid.position.y=this.mode==='time'?-this.extent*1.2:-this.extent*.24;grid.material.transparent=true;grid.material.opacity=.33;this.content.add(grid);
+  const entry={content:this.content,labels:this.labels,tubes:this.tubes,bodies:this.bodies,ghosts:this.ghosts,arrows:this.arrows,center:this.center,extent:this.extent};
+  this.activeKey=key;this.sceneCache.set(key,entry);this.trimCache();
   if(reset)this.resetCamera();this.update(this.progress);
  }
  resetCamera(top=false){const e=this.extent,aspect=Math.max(.35,this.camera.aspect),halfFov=this.camera.fov*Math.PI/360,fit=Math.max(1,1/aspect),distance=e*(this.mode==='time'?5.5:4.4)*fit;this.camera.position.copy(new THREE.Vector3(top?0:.22,top?1:2.1,top?.0001:3.8).normalize().multiplyScalar(distance));this.controls.target.set(0,0,0);this.controls.minDistance=e*.7;this.controls.maxDistance=Math.max(e*20,distance*3);this.camera.near=e*.001;this.camera.far=Math.max(e*100,distance*10);this.camera.updateProjectionMatrix();this.controls.update();}

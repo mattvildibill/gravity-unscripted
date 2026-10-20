@@ -13,7 +13,17 @@ for(const c of ['figure8','chaos','symmetry','custom']){a.choose(c);assert.equal
 for(let i=0;i<8;i++){a.choose('figure8');a.setSearch(i);assert.equal(a.state.search,i);a.choose('chaos');els.get('future').value=String(i);await els.get('future').fire('input')}
 for(let i=0;i<6;i++){a.tourStep(i);assert.equal(a.state.tour,i)}a.closeTour();
 a.choose('symmetry');a.state.polygon=3;await els.get('break-symmetry').fire('click');assert.equal(worker.c.m.length,3);assert.equal(worker.c.T,6.33);let c=worker.c;const result=simulate(c);const tighter=simulate({...c,tol:c.tol/10,maxStep:c.T/(c.samples-1)/2});result.diagnostics.numericalError=compare(result,tighter);result.diagnostics.maxNumericalError=Math.max(...result.diagnostics.numericalError);result.diagnostics.relativeDisagreement=0;a.choose('chaos');a.state.p=.6;worker.onmessage({data:{type:'complete',result}});assert.equal(a.state.p,.6);assert.equal(els.get('run').disabled,false);
-a.choose('custom');els.get('mass').value='2.1';await els.get('share').fire('click');assert.ok(clip.includes('2.1'));location.hash=new URL(clip).hash;a.restoreLink();assert.equal(els.get('mass').value,'2.1');assert.equal(a.state.playing,false);assert.ok(location.hash.includes('2.1'));
+// Sharing explicitly captures pending starting conditions, not a different displayed result.
+a.choose('custom');
+const displayedBeforeShare=a.state.custom;
+assert.notEqual(displayedBeforeShare.masses[0],2.1);
+els.get('mass').value='2.1';
+await els.get('share').fire('click');
+const sharedConditions=JSON.parse(decodeURIComponent(new URL(clip).hash.slice(1)));
+assert.equal(sharedConditions.recipe.mass,'2.1');
+assert.equal(a.state.custom,displayedBeforeShare,'Sharing must not calculate or replace the displayed orbit');
+assert.ok(els.get('toast').textContent.includes('pending changes'));
+location.hash=new URL(clip).hash;a.restoreLink();assert.equal(els.get('mass').value,'2.1');assert.equal(a.state.playing,false);assert.ok(location.hash.includes('2.1'));
 location.hash='#'+encodeURIComponent(JSON.stringify({v:1,case:'figure8',search:2.5,future:3.7,view:'time',p:.4}));a.restoreLink();assert.equal(a.state.search,3);assert.equal(a.state.future,4);assert.equal(a.scene().mode,'time');assert.equal(a.state.p,.4);a.choose('toString');assert.equal(a.state.case,'figure8');
 await els.get('fullscreen').fire('click');assert.equal(document.fullscreenElement,stage);
 await els.get('search-play').fire('click');els.get('search-step').value='2';await els.get('search-step').fire('input');assert.equal(a.state.searchPlaying,false);assert.ok(els.get('search-play').innerHTML.includes('Watch search'));
@@ -88,3 +98,27 @@ await vm.runInContext('(async()=>{'+src+'})()',dataFailureContext);
 assert.deepEqual(dataErrors,['The trajectory data did not load.']);assert.ok(dataFailureIcons>0);
 assert.equal(els.get('watch').disabled,true);assert.equal(els.get('run').disabled,true);assert.equal(buttons.every(b=>b.disabled),true);assert.equal(els.get('method-close').disabled,false);
 console.log('PASS: WebGL/data startup failures render icons, keep unavailable controls disabled, and preserve accessible mathematics.');
+
+// Optional nearby futures cannot disable the independent figure-eight or checked pair.
+const requested=[];let allowEnsemble=false;
+const optionalContext=vm.createContext({...context,
+ location:{hash:'',pathname:'/',href:'https://example.test/',reload(){}},
+ fetch:async url=>{requested.push(url);return {ok:url!=='/ensemble.json'||allowEnsemble,json:async()=>JSON.parse(fs.readFileSync(root+url.slice(1)))}},
+ console:{...console,error(){}}
+});
+const optional=await vm.runInContext('(async()=>{'+src+';return {state,choose,ensureEnsemble,scene:()=>scene};})()',optionalContext);
+assert.equal(requested.includes('/ensemble.json'),false,'Initial orbit must not request optional nearby futures');
+assert.equal(optional.scene().data.id,'figure8');
+optional.choose('chaos');await optional.ensureEnsemble();
+assert.equal(optional.scene().data.id,'chaos');
+assert.equal(els.get('play').disabled,false);
+assert.equal(buttons.every(b=>!b.disabled),true);
+assert.equal(els.get('future').disabled,true);
+const checkedPair=JSON.parse(fs.readFileSync(root+'trajectories.json','utf8')).scenarios.find(item=>item.id==='chaos');
+assert.equal(Number(els.get('stat-three').textContent),Math.max(checkedPair.diagnostics.maxEnergyDrift,checkedPair.diagnostics.maxPerturbedEnergyDrift),'The checked pair must retain energy evidence for both histories without optional data');
+assert.equal(els.get('retry-ensemble').hidden,false);
+assert.ok(els.get('ensemble-status').textContent.includes('checked pair above still works'));
+allowEnsemble=true;await els.get('retry-ensemble').fire('click');
+assert.equal(els.get('future').disabled,false);
+assert.equal(els.get('retry-ensemble').hidden,true);
+console.log('PASS: optional future-data failure preserves independent experiments; scoped retry recovers; sharing includes pending starting conditions without replacing the displayed result.');
